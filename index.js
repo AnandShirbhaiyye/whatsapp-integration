@@ -18,6 +18,15 @@ mongoose.connect(process.env.MONGO_URI, () => {
 
 const TWILIO_SEND = `https://api.twilio.com/2010-04-01/Accounts/${process.env.ACCOUNT_SID}/Messages.json`;
 
+const PRIORITY_MAP = {
+    "queued": 0,
+    "sent": 1,
+    "delivered": 2,
+    "read":4,
+    "failed": 5, 
+    "undelivered": 6
+}
+
 app.get('/health', (req, res) => {
     res.json({
         success: true,
@@ -46,8 +55,8 @@ app.post("/send",async (req,res)=>{
      // store message to db
    const messageObj = new message({
             sid: response.data.sid,
-            from: response.data.from,
             to: response.data.to,
+            from: response.data.from,
             text: response.data.body,
             status: response.data.status,
             direction: "outgoing",
@@ -62,10 +71,32 @@ app.post("/send",async (req,res)=>{
     });
 })
 
-app.post('/status_update',(req, res) => {
-     console.log(req.body);
+app.post('/status_update',async (req, res) => {
+
+    const sid = req.body.MessageSid;
+    const newStatus = req.body.MessageStatus;
+
+    const msgFromDB =await message.findOne({
+        sid: sid
+    });
+    if(!msgFromDB)
+    {
+        res.send({
+            status:true
+        })
+    }
+    const currentStatus = msgFromDB.status;
+
+    if(PRIORITY_MAP[newStatus] > PRIORITY_MAP[currentStatus])
+    {
+        await message.updateOne({sid: sid},{
+            $set: {
+                status: newStatus,
+            }
+        })
+    }
     res.send({
-        data:req.body
+        status:true
   });
 });
 
@@ -74,13 +105,13 @@ app.post('/receive',async (req, res) => {
     // store message to db
    const messageObj = new message({
     sid: req.body.SmsSid,
-    from: req.body.From,
     to: req.body.To,
+    from: req.body.From,
     text: req.body.Body,
-    status: req.body.Smstatus,
-    direction: "incoming",
-    createdAt: new Date().now,
-    updatedAt: new Date().now
+    status: req.body.SmsStatus,
+    direction: "incomimg",
+    createdAt: new Date().toDateString,
+    updatedAt: new Date().toDateString
 });
  await messageObj.save();
     res.send({
